@@ -8,6 +8,7 @@ from operator import itemgetter
 import os.path
 import string
 import sys
+import logging
 
 # ----- Constants ------
 
@@ -20,7 +21,7 @@ DATE_HEADING = 'Draw Date (yyyymmdd)'.lower()
 FIRST_NUM_HEADING = 'Winning Number 1'.lower()
 (MON, TUE, WED, THU, FRI, SAT, SUN) = range(7)  # same as datetime.weekday()
 DAY_COMBINATIONS = ((SAT,), (MON,), (TUE,), (WED,),
-                    (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED))
+                    (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED), (MON, WED))
 DAY_STRINGS = {MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri',
                SAT: 'Sat', SUN: 'Sun'}
 GOLD = '#FFFF00'
@@ -161,11 +162,10 @@ class Writer(object):
     font_weights = {'text_headings': 'bold',
                     'num_headings': 'medium'}
 
-    def __init__(self, matrix, colors, dpi, verbose):
+    def __init__(self, matrix, colors, dpi):
         self.matrix = matrix
         self.colors = colors
         self.dpi = dpi  # image resolution in dots per inch
-        self.verbose = verbose
 
     def format(self, table):
         """Format table for output to image file."""
@@ -279,13 +279,10 @@ class Writer(object):
                          loc='center')
         self.format(table)
         ax.axis('off')  # hide the axes that come with every plot
-        if self.verbose:
-            print('Saving {}...'.format(filename), end='')
-            sys.stdout.flush()
+        logging.debug('Saving {}...'.format(filename))
         plt.savefig(filename, dpi=self.dpi, bbox_inches='tight')
         plt.close('all')
-        if self.verbose:
-            print('done.')
+        logging.debug('done.')
 
 
 # ----- Functions ------
@@ -553,23 +550,25 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # import all the draws from csv
     if args.verbose:
-        print('Reading input files...', end='')
-        sys.stdout.flush()
+        logging.basicConfig(level=logging.DEBUG)
+    logging.debug('Reading input files...')
     reader = Reader(args.inputfiles, args.use_headings,
                     args.abort_on_error, args.number_range)
-    results = reader.read_files()
-    if args.verbose:
-        print('done.')
+    draws = reader.read_files()
+    logging.debug('done.')
 
+    # generate an image for every combination of days
     for days in DAY_COMBINATIONS:
-        days_results = filter_results(results, days, args.weeks)
+        days_results = filter_results(draws, days, args.weeks)
         if len(days_results) == 0:
             continue
         draw_pcts = calc_draw_percentages(days_results, args.number_range)
         matrix = create_matrix(days_results, draw_pcts, args.number_range)
         colors = create_color_matrix(matrix)
-        writer = Writer(matrix, colors, args.resolution, args.verbose)
+        writer = Writer(matrix, colors, args.resolution)
         filename = generate_filename(days, last_date(days_results))
         writer.write(filename)
 
