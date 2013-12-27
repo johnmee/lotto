@@ -61,7 +61,6 @@ class DrawChart(object):
         self.colors = self.create_color_matrix()
         self.footer = self.create_footer()
         self.height = len(self.header) + len(self.matrix) + len(self.footer)
-        print(len(self.colors), len(self.colors[0]))
 
     def create_header(self):
         headings = ['Date', 'File']
@@ -106,9 +105,6 @@ class DrawChart(object):
         return list(zip(*tallies))
 
     def cell_text(self):
-        print('header:', len(self.header))
-        print('matrix:', len(self.matrix))
-        print('footer:', len(self.footer))
         body = []
         for row in self.matrix:
             l = row[:2]  # date and filename
@@ -371,7 +367,6 @@ class Writer(object):
     def write(self, filename):
         """Write the results to a PNG image file."""
         cell_text = self.chart.cell_text()
-        for row in cell_text: print(type(row))
 
         # Create axes that take up the entire area and add a table.
         plt.figure(figsize=(self.dims['row_width'],
