@@ -29,13 +29,6 @@ GOLD = '#FFFF00'
 BLUE = '#66CCFF'
 PINK = '#FF6FCF'
 GREEN = '#66FF66'
-# Each rule tuple contains required cells with the previous cell at
-# position 0, earlier cells at higher indexes.
-# i.e. row -1     -2     -3     -4
-COLOR_RULES = OrderedDict([[(True,  True), GREEN],
-                           [(False, False, True), PINK],
-                           [(False, True), BLUE],
-                           [(True, ), GOLD]])
 
 
 # ------ Classes -------
@@ -43,6 +36,134 @@ COLOR_RULES = OrderedDict([[(True,  True), GREEN],
 class Draw(namedtuple('Draw', 'draw_num date numbers lowest highest')):
     """A sequence of integers identified by a date and draw number."""
     pass
+
+
+class DrawChart(object):
+    TALLY_COLORS = OrderedDict([[GOLD, 'Gold'], [BLUE, 'Blue'], [PINK, 'Pink'],
+                                [GREEN, 'Green']])
+    # Each rule tuple contains required cells with the previous cell at
+    # position 0, earlier cells at higher indexes.
+    # i.e. row -1     -2     -3     -4
+    COLOR_RULES = OrderedDict([[(True,  True), GREEN],
+                               [(False, False, True), PINK],
+                               [(False, True), BLUE],
+                               [(True, ), GOLD]])
+
+    """A chart containing Draws with formatting information."""
+    def __init__(self, results, num_range):
+        self.results = results
+        self.num_range = num_range
+
+    def process(self):
+        self.header = self.create_header()
+        self.matrix = self.create_matrix()
+        self.width = len(self.matrix[0])
+        self.colors = self.create_color_matrix()
+        self.footer = self.create_footer()
+        self.height = len(self.header) + len(self.matrix) + len(self.footer)
+        print(len(self.colors), len(self.colors[0]))
+
+    def create_header(self):
+        headings = ['Date', 'File']
+        lowest, highest = self.num_range
+        headings.extend(range(lowest, highest + 1))
+        return [headings]
+
+    def create_matrix(self):
+        """Build matrix of draws."""
+        # Build the list of draws.
+        lowest, highest = self.num_range
+        matrix = []
+        for fn, draws in self.results.items():
+            for draw in draws:
+                row = [draw.date, fn]
+                row.extend([num in draw.numbers for
+                            num in range(lowest, highest + 1)])
+                matrix.append(row)
+
+        # Sort by date, then filename within date.
+        date_col, file_col = 0, 1
+        matrix.sort(key=itemgetter(date_col, file_col))
+        return matrix
+        
+    def create_footer(self):
+        footer_rows = [self.draw_percentages_row()]
+        footer_rows += self.create_tallies_footer()
+        return footer_rows
+
+    def draw_percentages_row(self):
+        lowest, highest = self.num_range
+        pcts_dict = calc_draw_percentages(self.results, self.num_range)
+        pcts_list = [pcts_dict[n] for n in range(lowest, highest + 1)]
+        return list(itertools.chain(['', 'Draw %'], pcts_list))
+
+    def create_tallies_footer(self, to_tally=(GOLD, BLUE, PINK, GREEN)):
+        """Return a 2D list of strings containing color counts per column."""
+        tallies = [['', '', '', ''], ['Gold', 'Blue', 'Pink', 'Green']]
+        transposed = list(zip(*self.colors))
+        for column in transposed[2:]:
+            tallies.append([column.count(color) for color in to_tally])
+        return list(zip(*tallies))
+
+    def cell_text(self):
+        print('header:', len(self.header))
+        print('matrix:', len(self.matrix))
+        print('footer:', len(self.footer))
+        body = []
+        for row in self.matrix:
+            l = row[:2]  # date and filename
+            l.extend([DRAWN_STR if cell else NOT_DRAWN_STR for cell in row[2:]])
+            body.append(l)
+        return self.header + body + self.footer
+
+    def calc_color(self, previous_cells, rules):
+        """Calculate the color for a given cell."""
+        if not previous_cells:
+            return WHITE
+        for rule, color in rules.items():
+            if len(previous_cells) < len(rule):
+                continue
+            for check_cell, correct_cell in zip(previous_cells, rule):
+                if check_cell != correct_cell:
+                    break  # does not match this rule
+            else:
+                return color  # found a match
+        return WHITE
+
+    def create_color_matrix(self):
+        """Create a matrix of colors according to predefined rules.
+
+        Coloring rules:
+            Each cell in the area of the matrix defined by start_row,
+            start_col, and has_footer is colored depending on the cells in
+            the same column in the rows above.
+
+        Returns:
+            2D list of strings/None: A 2D list of the same dimensions as
+            matrix, where each cell in the area defined by start_row,
+            start_col, and has_footer is one of (None, GOLD, BLUE, PINK,
+            GREEN).
+
+        """
+        start_col = 2  # first two columns are date and filename
+        transposed = list(zip(*self.matrix))
+        colors = [[WHITE for row in range(len(self.matrix))] for
+                  col in range(self.width)]  # column major order
+        for row in range(len(self.matrix)):
+            for col in range(start_col, self.width):
+                if not self.matrix[row][col]:
+                    continue  # cell is empty
+                fourth_previous = max(row - 4, 0)
+                previous_cells = transposed[col][fourth_previous:row]
+                previous_cells = tuple(reversed(previous_cells))
+                colors[col][row] = self.calc_color(previous_cells,
+                                                   self.COLOR_RULES)
+        colors = list(zip(*colors))
+        # add header and footer rows
+        colors = [[WHITE for i in range(len(self.matrix[0]))]] + colors
+        colors += [[WHITE for i in range(len(self.matrix[0]))] for
+                   j in range(5)]
+        return colors
 
 
 class Reader(object):
@@ -158,20 +279,19 @@ class Writer(object):
     font_sizes = {'default': 12.0,  # points
                   'headings': 14.0,
                   'bullets': 24.0,
-                  'footer': 10.0}
+                  'draw_percentages': 10.0}
 
     font_weights = {'text_headings': 'bold',
                     'num_headings': 'medium'}
 
-    def __init__(self, matrix, colors, dpi):
-        self.matrix = matrix
-        self.colors = colors
+    def __init__(self, chart, dpi):
+        self.chart = chart
         self.dpi = dpi  # image resolution in dots per inch
 
     def format(self, table):
         """Format table for output to image file."""
         self.truncate_filenames(table)
-        rotate_footer_text(table)
+        rotate_footer_text(table, len(self.chart.footer))
         self.resize_table(table)
         self.format_text(table)
 
@@ -201,7 +321,8 @@ class Writer(object):
 
     def resize_cell(self, cell, row, col):
         """Resize a single cell."""
-        if row == len(self.matrix) - 1:
+        if row == self.chart.height - len(self.chart.footer):
+            # first row of the footer (draw percentage)
             cell.set_height(self.dims['footer_height'])
         else:
             cell.set_height(self.dims['cell_height'])
@@ -225,8 +346,10 @@ class Writer(object):
         """Return the font size and weight for the cell at (row, col)
         according to predetermined constants."""
         is_heading = row == 0
-        is_text = col in (self.date_col, self.file_col)
-        is_footer = row == len(self.matrix) - 1
+        is_text = col in (self.date_col, self.file_col) or\
+                  row > self.chart.height - len(self.chart.footer)
+        is_draw_percentage = row == self.chart.height - len(self.chart.footer) and\
+                                    col >= 2
         font_size = None
         weight = None
         # TODO: refactor
@@ -236,8 +359,8 @@ class Writer(object):
                 weight = self.font_weights['text_headings']
             else:
                 weight = self.font_weights['num_headings']
-        elif is_footer:
-            font_size = self.font_sizes['footer']
+        elif is_draw_percentage:
+            font_size = self.font_sizes['draw_percentages']
         else:
             if is_text:
                 font_size = self.font_sizes['default']
@@ -245,30 +368,17 @@ class Writer(object):
                 font_size = self.font_sizes['bullets']
         return font_size, weight
 
-    def cell_text(self):
-        """Get text for table cells."""
-        matrix = self.matrix
-        cell_text = []
-        for row in matrix[1:-1]:
-            l = [row[self.date_col], row[self.file_col]]
-            l.extend([DRAWN_STR if n else NOT_DRAWN_STR for n in row[2:]])
-            cell_text.append(l)
-        cell_text.append(matrix[-1])  # footer containing draw percentages
-        headings = matrix[0]  # passed separately to table()
-        return headings, cell_text
-
     def write(self, filename):
         """Write the results to a PNG image file."""
-        # Get the column headings and a 2D array of cells.
-        headings, cell_text = self.cell_text()
+        cell_text = self.chart.cell_text()
+        for row in cell_text: print(type(row))
 
         # Create axes that take up the entire area and add a table.
         plt.figure(figsize=(self.dims['row_width'],
                             self.dims['cell_height'] * 5))
         ax = plt.axes([0, 0, 1, 1])
         table = ax.table(cellText=cell_text,
-                cellColours=self.colors[1:],
-                         colLabels=headings,
+                         cellColours=self.chart.colors,
                          cellLoc='center',
                          loc='center')
         self.format(table)
@@ -341,16 +451,16 @@ def calc_table_width(table):
     return sum((cell.get_width() for cell in table.get_celld().values()))
 
 
-def rotate_footer_text(table):
-    """Rotate the text in every cell in the footer by 90 degrees.
+def rotate_footer_text(table, n, start_col=2):
+    """Rotate the text in the -nth row of the table clockwise 90 degrees.
 
     Args:
         table (matplotlib table)
 
     """
-    row_num = max((k[0] for k in table.get_celld().keys()))
-    cells = (cell for (row, _), cell in table.get_celld().items() if
-             row == row_num)
+    row_num = sorted({row for (row, _) in table.get_celld().keys()})[-n]
+    cells = (cell for (row, col), cell in table.get_celld().items() if
+             row == row_num and col >= start_col)
     for cell in cells:
         text = cell.get_text()
         text.set_rotation(270)
@@ -417,95 +527,6 @@ def calc_draw_percentages(results, num_range):
     return pcts
 
 
-def calc_color(previous_cells, rules):
-    """Calculate the color for a cell preceded by previous_cells.
-
-    Args:
-        previous_cells (list of bools): The zero or more cells that
-            preceded the cell whose color we're calculating.
-        rules (dict {list of bools: string}): A mapping of
-            previous cell possibilities to their colors.
-
-    """
-    # Note that all rules must be mutually exclusive unless rules is
-    # OrderedDict.
-    for rule, color in rules.items():
-        if len(previous_cells) < len(rule):
-            continue
-        for check_cell, correct_cell in zip(previous_cells, rule):
-            if check_cell != correct_cell:
-                break  # does not match this rule
-        else:
-            return color  # found a match
-    return WHITE
-
-
-def create_color_matrix(matrix, start_row=1, start_col=2, has_footer=True):
-    """Create a matrix of colors according to predefined rules.
-
-    Coloring rules:
-        Each cell in the area of the matrix defined by start_row,
-        start_col, and has_footer is colored depending on the cells in
-        the same column in the rows above.
-
-    Returns:
-        2D list of strings/None: A 2D list of the same dimensions as
-        matrix, where each cell in the area defined by start_row,
-        start_col, and has_footer is one of (None, GOLD, BLUE, PINK,
-        GREEN).
-
-    """
-    end_col = len(matrix[0]) - 1
-    end_row = len(matrix) - 1
-    if has_footer:
-        end_row -= 1
-    transposed = list(zip(*matrix))
-    colors = [[WHITE for row in range(len(matrix))] for
-              col in range(len(matrix[0]))]  # column major order
-
-    for row in range(start_row, end_row + 1):
-        for col in range(start_col, end_col + 1):
-            if not matrix[row][col]:
-                continue  # cell is empty
-            fourth_previous = max(row - 4, start_row)
-            previous_cells = transposed[col][fourth_previous:row]
-            previous_cells = tuple(reversed(previous_cells))
-            colors[col][row] = calc_color(previous_cells, COLOR_RULES)
-    return list(zip(*colors))
-
-
-def create_matrix(results, pcts_dict, num_range):
-    """Build matrix of draws.
-
-    Args:
-        results (dict str: Draw): List of Draws for each filename.
-        num_range (2-tuple of ints): Lowest and highest legal numbers.
-
-    """
-    # Build the list of draws.
-    lowest, highest = num_range
-    rows = []
-    for fn, draws in results.items():
-        for draw in draws:
-            row = [draw.date, fn]
-            row.extend([num in draw.numbers for
-                        num in range(lowest, highest + 1)])
-            rows.append(row)
-
-    # Sort by date, then filename within date.
-    date_col, file_col = 0, 1
-    rows.sort(key=itemgetter(date_col, file_col))
-
-    # Add headings row.
-    headings = ['Date', 'File']
-    headings.extend(range(lowest, highest + 1))
-    rows.insert(0, headings)
-
-    # Add draw percentages footer.
-    pcts_list = [pcts_dict[n] for n in range(lowest, highest + 1)]
-    rows.append(list(itertools.chain(['', ''], pcts_list)))
-    return rows
-
 
 def parse_args():
     """Parse arguments and perform simple validation."""
@@ -558,10 +579,9 @@ def main():
         days_results = filter_results(draws, days, args.weeks)
         if len(days_results) == 0:
             continue
-        draw_pcts = calc_draw_percentages(days_results, args.number_range)
-        matrix = create_matrix(days_results, draw_pcts, args.number_range)
-        colors = create_color_matrix(matrix)
-        writer = Writer(matrix, colors, args.resolution)
+        chart = DrawChart(days_results, args.number_range)
+        chart.process()
+        writer = Writer(chart, args.resolution)
         filename = generate_filename(days, last_date(days_results))
         writer.write(filename)
 
