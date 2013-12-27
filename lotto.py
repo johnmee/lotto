@@ -24,6 +24,7 @@ DAY_COMBINATIONS = ((SAT,), (MON,), (TUE,), (WED,),
                     (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED), (MON, WED))
 DAY_STRINGS = {MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri',
                SAT: 'Sat', SUN: 'Sun'}
+WHITE = '#FFFFFE'
 GOLD = '#FFFF00'
 BLUE = '#66CCFF'
 PINK = '#FF6FCF'
@@ -173,15 +174,15 @@ class Writer(object):
         rotate_footer_text(table)
         self.resize_table(table)
         self.format_text(table)
-        self.color_cells(table)
 
     def truncate_filenames(self, table):
         """Truncate filenames that won't fit in the file column."""
-        for (row, col), cell in table.get_celld().items():
+        for (_, col), cell in table.get_celld().items():
             if col == self.file_col:
-                filename = cell.get_text().get_text()
+                text = cell.get_text()
+                filename = text.get_text()
                 shortened = filename[:self.dims['max_filename']]
-                cell.get_text().set_text(shortened)
+                text.set_text(shortened)
 
     def resize_table(self, table):
         """Resize the pyplot cells according to Writer cell
@@ -244,14 +245,6 @@ class Writer(object):
                 font_size = self.font_sizes['bullets']
         return font_size, weight
 
-    def color_cells(self, table):
-        """TODO"""
-        for (row, col), cell in table.get_celld().items():
-            if row > 0 and col > 1:
-                color = self.colors[row][col]
-                if color is not None:
-                    cell.set_facecolor(color)
-
     def cell_text(self):
         """Get text for table cells."""
         matrix = self.matrix
@@ -274,6 +267,7 @@ class Writer(object):
                             self.dims['cell_height'] * 5))
         ax = plt.axes([0, 0, 1, 1])
         table = ax.table(cellText=cell_text,
+                cellColours=self.colors[1:],
                          colLabels=headings,
                          cellLoc='center',
                          loc='center')
@@ -355,7 +349,7 @@ def rotate_footer_text(table):
 
     """
     row_num = max((k[0] for k in table.get_celld().keys()))
-    cells = (cell for (row, col), cell in table.get_celld().items() if
+    cells = (cell for (row, _), cell in table.get_celld().items() if
              row == row_num)
     for cell in cells:
         text = cell.get_text()
@@ -398,7 +392,6 @@ def filter_results(results, days, weeks):
     that land on a day in days.
 
     Returns:
-        str: The filename resulting from the days, weeks combination.
         dict (str: list of Draws): results filtered by days and weeks.
 
     """
@@ -444,7 +437,7 @@ def calc_color(previous_cells, rules):
                 break  # does not match this rule
         else:
             return color  # found a match
-    return None
+    return WHITE
 
 
 def create_color_matrix(matrix, start_row=1, start_col=2, has_footer=True):
@@ -467,7 +460,7 @@ def create_color_matrix(matrix, start_row=1, start_col=2, has_footer=True):
     if has_footer:
         end_row -= 1
     transposed = list(zip(*matrix))
-    colors = [[None for row in range(len(matrix))] for
+    colors = [[WHITE for row in range(len(matrix))] for
               col in range(len(matrix[0]))]  # column major order
 
     for row in range(start_row, end_row + 1):
