@@ -14,9 +14,15 @@ import logging
 
 (MON, TUE, WED, THU, FRI, SAT, SUN) = range(7)  # same as datetime.weekday()
 DAY_COMBINATIONS = ((SAT,), (MON,), (TUE,), (WED,),
-                    (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED), (MON, WED))
+                    (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED),
+                    (MON, WED))
 DAY_STRINGS = {MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri',
                SAT: 'Sat', SUN: 'Sun'}
+WHITE = '#FFFFFE'
+GOLD = '#FFFF00'
+BLUE = '#66CCFF'
+PINK = '#FF6FCF'
+GREEN = '#66FF66'
 
 
 # ------ Classes -------
@@ -31,11 +37,6 @@ class DrawChart(object):
     DRAWN_STR = '•'
     NOT_DRAWN_STR = ''
     TEXT_COLS = 2  # date and filename
-    WHITE = '#FFFFFE'
-    GOLD = '#FFFF00'
-    BLUE = '#66CCFF'
-    PINK = '#FF6FCF'
-    GREEN = '#66FF66'
     TALLY_COLORS = OrderedDict([[GOLD, 'Gold'], [BLUE, 'Blue'], [PINK, 'Pink'],
                                 [GREEN, 'Green']])
     # Each rule tuple contains required cells with the previous cell at
@@ -52,16 +53,18 @@ class DrawChart(object):
         self.results = results
         self.draws = tuple(itertools.chain(*self.results.values()))
         self.lowest, self.highest = num_range
-        self.process()
+        (self.header, self.body, self.colors, self.footer, self.width,
+            self.height) = self.process()
 
     def process(self):
         """Create chart from draws in self.results."""
-        self.header = self.create_header()
-        self.body = self.create_matrix()
-        self.colors = self.create_color_matrix()
-        self.footer = self.create_footer()
-        self.width = len(self.body[0])
-        self.height = len(self.header) + len(self.body) + len(self.footer)
+        header = self.create_header()
+        body = self.create_matrix()
+        colors = self.create_color_matrix(body)
+        footer = self.create_footer(colors)
+        width = len(body[0])
+        height = len(header) + len(body) + len(footer)
+        return (header, body, colors, footer, width, height)
 
     def create_header(self):
         """Return the header rows for this chart."""
@@ -81,10 +84,10 @@ class DrawChart(object):
         date_col, file_col = 0, 1
         matrix.sort(key=itemgetter(date_col, file_col))
         return matrix
-        
-    def create_footer(self):
+
+    def create_footer(self, colors):
         """Return footer rows for this chart."""
-        return [self.draw_percentages_row()] + self.tallies_footer()
+        return [self.draw_percentages_row()] + self.tallies_footer(colors)
 
     def draw_percentages_row(self):
         """Return the draw percentages row for this chart."""
@@ -100,17 +103,17 @@ class DrawChart(object):
         times_drawn = sum((draw.numbers.count(n) for draw in self.draws))
         return '{:.4f}%'.format(times_drawn / opps)
 
-    def tallies_footer(self):
+    def tallies_footer(self, color_matrix):
         """Return a 2D list of strings containing color counts by column."""
         colors, names = zip(*self.TALLY_COLORS.items())
         tallies = [[''] * len(colors)]  # column major order
-        tallies.extend([names])  
-        transposed = list(zip(*self.colors))
+        tallies.extend([names])
+        transposed = list(zip(*color_matrix))
         for column in itertools.islice(transposed, self.TEXT_COLS, None):
             tallies.append([column.count(color) for color in colors])
         return list(zip(*tallies))
 
-    def create_color_matrix(self):
+    def create_color_matrix(self, body):
         """Create a matrix of colors according to predefined rules.
 
         Coloring rules:
@@ -127,14 +130,14 @@ class DrawChart(object):
         """
         start_col = self.TEXT_COLS
         max_rule_length = max((len(rule) for rule in self.COLOR_RULES.keys()))
-        width = len(self.body[0])
-        height = len(self.body)
-        transposed = list(zip(*self.body))
-        colors = [[self.WHITE for row in range(height)] for
+        width = len(body[0])
+        height = len(body)
+        transposed = list(zip(*body))
+        colors = [[WHITE for row in range(height)] for
                   col in range(width)]  # column major order
         for row in range(height):
             for col in range(start_col, width):
-                if not self.body[row][col]:
+                if not body[row][col]:
                     continue  # cell is empty
                 fourth_previous = max(row - max_rule_length, 0)
                 previous_cells = transposed[col][fourth_previous:row]
@@ -143,9 +146,9 @@ class DrawChart(object):
                                                    self.COLOR_RULES)
         colors = list(zip(*colors))
         # add header and footer rows
-        colors = [[self.WHITE for col in range(width)] for
-                   row in range(self.HEADER_HEIGHT)] + colors
-        colors += [[self.WHITE for col in range(width)] for
+        colors = [[WHITE for col in range(width)] for
+                  row in range(self.HEADER_HEIGHT)] + colors
+        colors += [[WHITE for col in range(width)] for
                    row in range(self.FOOTER_HEIGHT)]
         return colors
 
@@ -159,7 +162,7 @@ class DrawChart(object):
                     break
             else:
                 return color  # found a match
-        return self.WHITE
+        return WHITE
 
     def cell_text(self):
         """Return 2D list of strings representing this chart."""
@@ -170,7 +173,7 @@ class DrawChart(object):
                              cell in row[self.TEXT_COLS:]])
             cells.append(row_text)
         return self.header + cells + self.footer
- 
+
 
 class Reader(object):
     """A reader for CSV files containing lottery data."""
@@ -179,6 +182,7 @@ class Reader(object):
     FIRST_NUM_HEADING = 'Winning Number 1'.lower()
     DELIMITERS = (',', ';', '\t')  # expected CSV delimiters
     MAX_DRAWN_NUMBERS = 9  # OzLotto has 7 + 2 supps
+
     def __init__(self, filenames, use_headings, abort_on_error, num_range):
         self.filenames = filenames
         self.use_headings = use_headings
@@ -268,8 +272,8 @@ class Reader(object):
 
 class Writer(object):
     """PNG Image writer for analysed lottery data."""
-    date_col = 0
-    file_col = 1
+    DATE_COL = 0
+    FILE_COL = 1
 
     # matplotlib table formatting is poorly supported, so the
     # table dimensions were found by trial and error.  These
@@ -279,7 +283,7 @@ class Writer(object):
     # of paper.
     # Unfortunately, text size cannot be predicted before rendering so
     # filenames that are too long must be truncated.
-    dims = {'row_width': 16,  # inches
+    DIMS = {'row_width': 16,  # inches
             'cell_height': 0.28,
             'footer_height': 0.6,
             'num_width': 0.29,
@@ -287,12 +291,12 @@ class Writer(object):
             'file_width': 1.3,
             'max_filename': 23}  # characters
 
-    font_sizes = {'default': 12.0,  # points
+    FONT_SIZES = {'default': 12.0,  # points
                   'headings': 14.0,
                   'bullets': 24.0,
                   'draw_percentages': 10.0}
 
-    font_weights = {'text_headings': 'bold',
+    FONT_WEIGHTS = {'text_headings': 'bold',
                     'num_headings': 'medium'}
 
     def __init__(self, chart, dpi):
@@ -302,17 +306,17 @@ class Writer(object):
     def format(self, table):
         """Format table for output to image file."""
         self.truncate_filenames(table)
-        rotate_footer_text(table, len(self.chart.footer))
+        rotate_footer_text(table, self.chart.FOOTER_HEIGHT)
         self.resize_table(table)
         self.format_text(table)
 
     def truncate_filenames(self, table):
         """Truncate filenames that won't fit in the file column."""
         for (_, col), cell in table.get_celld().items():
-            if col == self.file_col:
+            if col == self.FILE_COL:
                 text = cell.get_text()
                 filename = text.get_text()
-                shortened = filename[:self.dims['max_filename']]
+                shortened = filename[:self.DIMS['max_filename']]
                 text.set_text(shortened)
 
     def resize_table(self, table):
@@ -332,17 +336,17 @@ class Writer(object):
 
     def resize_cell(self, cell, row, col):
         """Resize a single cell."""
-        if row == self.chart.height - len(self.chart.footer):
+        if row == self.chart.height - self.chart.FOOTER_HEIGHT:
             # first row of the footer (draw percentage)
-            cell.set_height(self.dims['footer_height'])
+            cell.set_height(self.DIMS['footer_height'])
         else:
-            cell.set_height(self.dims['cell_height'])
-        if col == self.date_col:
-            cell.set_width(self.dims['date_width'])
-        elif col == self.file_col:
-            cell.set_width(self.dims['file_width'])
+            cell.set_height(self.DIMS['cell_height'])
+        if col == self.DATE_COL:
+            cell.set_width(self.DIMS['date_width'])
+        elif col == self.FILE_COL:
+            cell.set_width(self.DIMS['file_width'])
         else:
-            cell.set_width(self.dims['num_width'])
+            cell.set_width(self.DIMS['num_width'])
 
     def format_text(self, table):
         """Set font sizes and weights."""
@@ -359,23 +363,24 @@ class Writer(object):
         is_heading = row == 0
         is_footer = row > self.chart.height - self.chart.FOOTER_HEIGHT
         is_text = col < self.chart.TEXT_COLS or is_footer
-        is_draw_percentage = (row == self.chart.height - self.chart.FOOTER_HEIGHT and
+        is_draw_percentage = (row == self.chart.height -
+                              self.chart.FOOTER_HEIGHT and
                               col >= self.chart.TEXT_COLS)
         font_size = None
         weight = None
         if is_heading:
-            font_size = self.font_sizes['headings']
+            font_size = self.FONT_SIZES['headings']
             if is_text:
-                weight = self.font_weights['text_headings']
+                weight = self.FONT_WEIGHTS['text_headings']
             else:
-                weight = self.font_weights['num_headings']
+                weight = self.FONT_WEIGHTS['num_headings']
         elif is_draw_percentage:
-            font_size = self.font_sizes['draw_percentages']
+            font_size = self.FONT_SIZES['draw_percentages']
         else:
             if is_text:
-                font_size = self.font_sizes['default']
+                font_size = self.FONT_SIZES['default']
             else:
-                font_size = self.font_sizes['bullets']
+                font_size = self.FONT_SIZES['bullets']
         return font_size, weight
 
     def write(self, filename):
@@ -383,8 +388,8 @@ class Writer(object):
         cell_text = self.chart.cell_text()
 
         # Create axes that take up the entire area and add a table.
-        plt.figure(figsize=(self.dims['row_width'],
-                            self.dims['cell_height'] * 5))
+        plt.figure(figsize=(self.DIMS['row_width'],
+                            self.DIMS['cell_height'] * 5))
         ax = plt.axes([0, 0, 1, 1])
         table = ax.table(cellText=cell_text,
                          cellColours=self.chart.colors,
@@ -517,8 +522,6 @@ def filter_results(results, days, weeks):
     filtered = filter_by_weekdays(results, days)
     filtered = filter_by_cutoff_date(filtered, weeks)
     return {fn: draws for fn, draws in filtered.items() if draws}
-
-
 
 
 def parse_args():
