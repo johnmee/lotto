@@ -11,6 +11,7 @@ WEEK_FILENAME = 'MondayWednesdayLotto.csv'
 OLDEST_DRAW = datetime.date.today() - datetime.timedelta(weeks=104)
 (MON, TUE, WED, THU, FRI, SAT, SUN) = range(7)  # same as datetime.weekday()
 
+
 class LottoDraw(object):
     """
     A single lotto draw.
@@ -31,7 +32,7 @@ class LottoDraw(object):
         return "{} {} {}".format(self.date, self.label, self.numbers)
 
 
-class Lotto(object):
+class LottoCollection(object):
     """
     A collection of draws for a Lotto game
     """
@@ -77,19 +78,9 @@ class Lotto(object):
         Return a lotto object with only draws occuring on the days of the week
         days: integers 0..6 matching days of the week Mon..Sun
         """
-        klass = self.__class__
-        obj = klass()
+        obj = self.__class__()
         obj._draws = [draw for draw in self._draws if draw.date.weekday() in days]
         return obj
-
-
-class Chart(object):
-    """
-    A pretty chart/report generator for lotto data
-    """
-    @staticmethod
-    def write(lotto):
-        print(lotto)
 
 
 # parse commandline arguments
@@ -106,14 +97,14 @@ if args.download:
         print("Downloaded {}".format(filename))
 
 
+if __name__ == '__main__':
+    # load lotto data
+    draws = LottoCollection()
+    draws.import_file('OzLotto', OZ_FILENAME)
+    draws.import_file('TattsLotto', TATTS_FILENAME)
+    draws.import_file('WeekLotto', WEEK_FILENAME)
+    draws.sort()
 
-# load lotto data
-draws = Lotto()
-draws.import_file('OzLotto', OZ_FILENAME)
-draws.import_file('TattsLotto', TATTS_FILENAME)
-draws.import_file('WeekLotto', WEEK_FILENAME)
-draws.sort()
-
-# filter for specific days
-weekdraws = draws.filter(MON, WED)
-Chart.write(draws)
+    # filter for specific days
+    weekdraws = draws.filter(MON, WED)
+    print(draws)
