@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import argparse
 from collections import namedtuple, OrderedDict
 import csv
