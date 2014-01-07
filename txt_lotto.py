@@ -1,3 +1,5 @@
+#!/usr/local/bin/python3
+
 import argparse
 import csv
 import datetime
@@ -17,7 +19,13 @@ BALLS = range(1, MAX_BALLS+1)
 OLDEST_DRAW = datetime.date.today() - datetime.timedelta(weeks=104)
 
 LOTTO_NAME_MAP = ('Monday', 'OzLotto', 'Wednesday', 'Thu', 'Fri', 'TattsLotto', 'Sun')
-TALLY_NAMES = ('Green', 'Gold', 'Blue', 'Pink', 'Drawn', 'Blank')
+TALLY_NAMES = ('Green', 'Gold', 'Blue', 'Pink', 'Drawn', 'Not Drawn')
+
+(MON, TUE, WED, THU, FRI, SAT, SUN) = range(7)  # same as datetime.weekday()
+DRAW_COMBINATIONS = (
+    (SAT,), (MON,), (TUE,), (WED,),
+    (SAT, MON), (SAT, TUE), (SAT, WED), (MON, TUE), (TUE, WED), (MON, WED)
+)
 
 
 class Colors:
@@ -27,7 +35,7 @@ class Colors:
     BLUE = 2
     PINK = 3
     WHITE = 4
-    BLANK = 5
+    NONE = 5
 
 
 class LottoDraw(object):
@@ -103,7 +111,7 @@ class LottoChart(object):
         def get_color(self, ball):
             """Returns the constant for the mark of this ball in this draw"""
             if ball not in self._this:
-                return Colors.BLANK
+                return Colors.NONE
             try:
                 if self.is_green(ball):
                     return Colors.GREEN
@@ -187,31 +195,97 @@ class TextWriter(object):
         return string
 
 
-# parse commandline arguments
-parser = argparse.ArgumentParser('Process and Chart lottery data.')
-parser.add_argument('-d', '--download', action='store_true', help='Download the input files from tatts.com')
-args = parser.parse_args()
+class HTMLWriter(object):
+    """
+    an html rendering of chart
+    """
+    template = """<html>
+<head>
+    <style>
+        table {{ border-collapse: collapse }}
+        tr.bold {{ font-weight: bold; }}
+        td {{ white-space: nowrap; border: 1px solid black; width:25px; text-align:center; }}
+        .date {{ padding: 2px 5px; }}
+    </style>
+</head><body>
+<h1>{title}</h1><table>\n{table}\n</table>
+</body></html>
+"""
 
-# download lotto archives from the Internet and save to local file
-if args.download:
-    for filename in (TATTS_FILENAME, OZ_FILENAME, WEEK_FILENAME):
-        response = urllib.request.urlopen("{}{}".format(TATTS_URL, filename))
-        with open(filename, 'w') as f:
-            f.write(response.read().decode('utf-8'))
-        print("Downloaded {}".format(filename))
+    def __init__(self, chart, title):
+        self.chart = chart
+        self.title = "_".join([LOTTO_NAME_MAP[game] for game in title])
+
+    @staticmethod
+    def _row_of_numbers():
+        html = "<tr class='bold'><td>Date</td><td>Game</td><td>"
+        html += "</td><td>".join([str(x) for x in BALLS])
+        html += "</td></tr>"
+        return html
+
+    def _table_data(self):
+        table = ""
+        for row in self.chart.rows:
+            table += "<tr><td class='date'>{}</td><td class='date'>{}</td>".format(row['date'], row['name'])
+            for cell in row['colors']:
+                bullet = '&bull;'
+                if cell == Colors.NONE:
+                    bullet = ''
+                bgcolor = ('lightgreen', 'gold', 'lightblue', 'pink', 'white', 'white')[cell]
+                table += "<td style='background-color: {}'>{}</td>".format(bgcolor, bullet)
+            table += "</tr>\n"
+        return table
+
+    def _tallies(self):
+        """return a footer showing numbered columns"""
+        html = ""
+        for tally in TALLY_NAMES:
+            row = "<tr><td colspan=2>{}</td><td>".format(tally)
+            row += "</td><td>".join([str(x) for x in self.chart.tallies[tally]])
+            row += "</td></tr>"
+            html += row
+        return html
+
+    def save(self, fname):
+        table = ""
+        table += self._row_of_numbers()
+        table += self._table_data()
+        table += self._row_of_numbers()
+        table += self._tallies()
+        html = self.template.format(title=self.title, table=table)
+        with open(fname, 'w') as file:
+            file.write(html)
 
 
 if __name__ == '__main__':
+    # parse commandline arguments
+    parser = argparse.ArgumentParser('Process and Chart lottery data.')
+    parser.add_argument('-d', '--download', action='store_true', help='Download the input files from tatts.com')
+    args = parser.parse_args()
+
+    # download lotto archives from the Internet and save to local file
+    if args.download:
+        for filename in (TATTS_FILENAME, OZ_FILENAME, WEEK_FILENAME):
+            response = urllib.request.urlopen("{}{}".format(TATTS_URL, filename))
+            with open(filename, 'w') as f:
+                f.write(response.read().decode('utf-8'))
+            print("Downloaded {}".format(filename))
+
     # load lotto data
     ozlotto = list(LottoDraw.from_csv(OZ_FILENAME))
     tattslotto = list(LottoDraw.from_csv(TATTS_FILENAME))
     weeklotto = list(LottoDraw.from_csv(WEEK_FILENAME))
 
     # put all the draws together
-    draws = ozlotto + tattslotto + weeklotto
-    draws.sort()
+    all_draws = ozlotto + tattslotto + weeklotto
+    all_draws.sort()
 
-    # filter for specific days
-    mondays = [draw for draw in draws if draw.date.weekday() == 2]
-    chart = LottoChart(mondays)
-    print(TextWriter(chart))
+    # chart every combo and create an index file
+    with open('html/index.html', 'w') as file:
+        file.write("<h1>Lapp Lotto</h1>")
+        for combo in DRAW_COMBINATIONS:
+            draws = [draw for draw in all_draws if draw.date.weekday() in combo]
+            chart = LottoChart(draws)
+            writer = HTMLWriter(chart, combo)
+            writer.save('html/{}.html'.format(writer.title))
+            file.write("<p><a href='{0}.html'>{0}</a></p>".format(writer.title))
