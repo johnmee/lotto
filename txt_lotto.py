@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 import argparse
 import csv
@@ -202,9 +202,9 @@ class HTMLWriter(object):
     template = """<html>
 <head>
     <style>
-        table {{ border-collapse: collapse }}
+        table {{ border-collapse: collapse; font-size: 7pt; }}
         tr.bold {{ font-weight: bold; }}
-        td {{ white-space: nowrap; border: 1px solid black; width:25px; text-align:center; }}
+        td {{ white-space: nowrap; border: 1px solid black; width:20px; text-align:center; }}
         .date {{ padding: 2px 5px; }}
     </style>
 </head><body>
@@ -289,3 +289,4 @@ if __name__ == '__main__':
             writer = HTMLWriter(chart, combo)
             writer.save('html/{}.html'.format(writer.title))
             file.write("<p><a href='{0}.html'>{0}</a></p>".format(writer.title))
+            # print(TextWriter(chart))
