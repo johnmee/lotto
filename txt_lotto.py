@@ -261,6 +261,8 @@ class HTMLWriter(object):
 
 
 if __name__ == '__main__':
+    print(datetime.datetime.now())
+
     # parse commandline arguments
     parser = argparse.ArgumentParser('Process and Chart lottery data.')
     parser.add_argument('-d', '--download', action='store_true', help='Download the input files from tatts.com')
