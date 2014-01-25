@@ -1,6 +1,7 @@
 # lotto project
 *.csv
 *.png
+html/*
 
 # defaults
 *.py[cod]

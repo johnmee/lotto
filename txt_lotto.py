@@ -57,20 +57,23 @@ class LottoDraw(object):
         reader = csv.reader(csvfile)
         next(reader)    # discard the first line
         for row in reader:
-            # parse the date
-            date_string = row[1]
-            date_obj = datetime.date(int(date_string[0:4]), int(date_string[4:6]), int(date_string[6:8]))
-            if date_obj >= OLDEST_DRAW:
-                # collect numbers until not numbers
-                numbers = []
-                for txt in row[2:]:
-                    try:
-                        numbers.append(int(txt))
-                    except ValueError:
-                        # we've run out of numbers
-                        break
-                # save this draw
-                yield LottoDraw(date_obj, numbers)
+            try:
+                # parse the date
+                date_string = row[1]
+                date_obj = datetime.date(int(date_string[0:4]), int(date_string[4:6]), int(date_string[6:8]))
+                if date_obj >= OLDEST_DRAW:
+                    # collect numbers until not numbers
+                    numbers = []
+                    for txt in row[2:]:
+                        try:
+                            numbers.append(int(txt))
+                        except ValueError:
+                            # we've run out of numbers
+                            break
+                    # save this draw
+                    yield LottoDraw(date_obj, numbers)
+            except IndexError:
+                print("IndexError in row: {}".format(row))
         csvfile.close()
 
     def __init__(self, date, numbers):
@@ -289,4 +292,4 @@ if __name__ == '__main__':
             writer = HTMLWriter(chart, combo)
             writer.save('html/{}.html'.format(writer.title))
             file.write("<p><a href='{0}.html'>{0}</a></p>".format(writer.title))
-            # print(TextWriter(chart))
+            print(writer.title)
